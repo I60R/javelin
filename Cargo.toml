@@ -1,0 +1,10 @@
+[package]
+name = "javelin"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "3.1.5", features = ["derive"] }
+input = "0.7.1"
+libc = "0.2.119"
+swayipc = "3.0.0"
