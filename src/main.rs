@@ -1,7 +1,11 @@
 extern crate libc;
 
 use clap::{Parser, AppSettings};
-use input::{event::{EventTrait, pointer::PointerEventTrait, PointerEvent as __}, Libinput, LibinputInterface};
+use input::{
+    event::{EventTrait, pointer::PointerEventTrait, PointerEvent as __},
+    Libinput,
+    LibinputInterface
+};
 use swayipc::{Rect, Node};
 use std::{
     path::Path,
@@ -9,7 +13,8 @@ use std::{
     os::unix::{
         fs::OpenOptionsExt,
         io::{RawFd, FromRawFd, IntoRawFd}
-    }
+    },
+    thread
 };
 
 // Interface implementation was copied from Smithay/input event loop example
@@ -36,82 +41,166 @@ impl LibinputInterface for Interface {
 
 fn main() {
     let mut conn = swayipc::Connection::new().expect("Cannot connect to Sway!");
+
     let Args {
-        touchpad_device, trackpoint_device,
-        touchpad_pointer_accel, trackpoint_pointer_accel,
-        touchpad_scroll_factor, trackpoint_scroll_factor,
-        x_ratio, y_ratio,
-        reset_msec, trackpoint_withdraw_msec,
-        precision_factor, precision_mode_msec, precision_mode_withdraw_msec,
-        offsets,
-        scroll_deposit_msec
+        touchpad_device,
+        trackpoint_device,
+        pointer_acceleration,
+        javelin_acceleration,
+        pointer_cooldown,
+        javelin_cooldown,
+        reload_msec,
+        tremble_nsec,
+        x_split_reload,
+        y_split_reload,
+        offsets
     } = Args::parse();
+
     let offsets: std::collections::HashMap<_, _> = offsets.iter()
         .map(|s| {
             let mut it = s.split(':');
             let app = it.next().unwrap();
-            let x_offset = it.next().unwrap_or("0").parse::<i32>().expect("Invalid offset format");
-            let y_offset = it.next().unwrap_or("0").parse::<i32>().expect("Invalid offset format");
-            (app, (x_offset, y_offset))
+            let offsets = (
+                it.next().unwrap_or("0").parse::<i32>().expect("Invalid x offset format"),
+                it.next().unwrap_or("0").parse::<i32>().expect("Invalid y offset format"),
+            );
+            (app, offsets)
         })
         .collect();
+
     conn.run_command(format!("
         focus_follows_mouse always
         mouse_warping container
-        input type:touchpad pointer_accel {touchpad_pointer_accel}
-        input type:trackpoint scroll_factor {trackpoint_scroll_factor}
-        input type:trackpoint pointer_accel {trackpoint_pointer_accel}
+        seat * hide_cursor {reload_msec}
+        input type:touchpad pointer_accel {javelin_acceleration}
     ")).unwrap();
-    let mut input = Libinput::new_from_path(Interface);
-    let input_raw = std::ptr::addr_of_mut!(input); // break uniqueness rules to remove cursor lag
-    let (_trackpoint, touchpad) = (
-        input.path_add_device(&trackpoint_device).expect("Cannot open trackpoint device: this program is unusable with touchpad only"),
-        input.path_add_device(&touchpad_device).expect("Cannot open touchpad device"),
-    );
+
+    let mut libinput = Libinput::new_from_path(Interface);
+
+    let touchpad = libinput.path_add_device(&touchpad_device)
+        .expect("Cannot open touchpad device");
+
+    if let None = libinput.path_add_device(&trackpoint_device) {
+        eprintln!("Cannot open trackpoint device {trackpoint_device}; SKIP")
+    }
+
     let mut past_event_time = 0;
+    let mut javelin = true;
+
     loop {
-        unsafe {(*input_raw).dispatch().unwrap()}
-        for event in &mut input {
-            if let input::Event::Pointer(motion_event @ (__::Motion(_) | __::MotionAbsolute(_))) = event {
-                let current_event_time = motion_event.time();
-                let delta_time;
-                (past_event_time, delta_time) = (current_event_time, current_event_time - past_event_time);
-                if motion_event.device() == touchpad {
-                    if delta_time > reset_msec {
-                        conn.run_command(format!("
-                            input type:touchpad pointer_accel {touchpad_pointer_accel}
-                        ")).unwrap();
-                        unsafe {(*input_raw).dispatch().unwrap()}
-                        let focused_window = conn.get_tree().unwrap().find_focused(|n| n.nodes.len() == 0).unwrap();
-                        unsafe {(*input_raw).dispatch().unwrap()}
-                        let Rect { mut x, mut y, width, height, .. } = focused_window.rect;
-                        (x, y) = (
-                            x + width / x_ratio,
-                            y + height / y_ratio
-                        );
-                        let Node {app_id, window_properties, .. } = focused_window;
-                        let app = app_id.or(window_properties.and_then(|p| p.instance.or(p.class).or(p.title)));
-                        if let Some((x_offset, y_offset)) = offsets.get(app.as_deref().unwrap_or("none")) {
-                            x += x_offset;
-                            y += y_offset;
-                        }
-                        conn.run_command(format!("seat seat0 cursor set {x} {y}")).unwrap();
-                        unsafe {(*input_raw).dispatch().unwrap()}
-                    } else if delta_time > precision_mode_msec {
-                        let touchpad_scroll_factor_precise = touchpad_scroll_factor / precision_factor;
-                        let touchpad_pointer_accel_precise = touchpad_pointer_accel / precision_factor;
-                        conn.run_command(format!("
-                            input type:touchpad scroll_factor {touchpad_scroll_factor_precise}
-                            input type:touchpad pointer_accel {touchpad_pointer_accel_precise}
-                        ")).unwrap();
-                        past_event_time -= precision_mode_withdraw_msec;
-                    }
-                } else {
-                    past_event_time -= trackpoint_withdraw_msec // always reset touchpad after trackpoint use
-                }
-            } else if let input::Event::Pointer(scroll_event @ (__::ScrollContinuous(_) | __::ScrollFinger(_) | __::ScrollWheel(_))) = event {
-                past_event_time = scroll_event.time()
+        libinput.dispatch().unwrap();
+
+        let event = match libinput.next() {
+            Some(input::Event::Pointer(ev)) => ev,
+            _ => continue
+        };
+
+        if let motion_event @ (__::Motion(_) | __::MotionAbsolute(_)) = event {
+
+            let current_event_time = motion_event.time();
+            let delta_time;
+
+            (past_event_time, delta_time) =
+                (current_event_time, current_event_time - past_event_time);
+
+            if motion_event.device() != touchpad {
+                past_event_time = past_event_time.saturating_sub(pointer_cooldown);
+                javelin = false;
+                continue
             }
+
+            if delta_time > reload_msec {
+                conn.run_command(format!("
+                    input type:touchpad pointer_accel {javelin_acceleration}
+                ")).unwrap();
+
+                libinput.dispatch().unwrap();
+
+                let focused_window = conn.get_tree().unwrap()
+                    .find_focused(|n| n.nodes.is_empty()).unwrap();
+                let Rect { mut x, mut y, width, height, .. } = focused_window.rect;
+                (x, y) = (
+                    x + width / x_split_reload,
+                    y + height / y_split_reload
+                );
+                let Node { app_id, window_properties, .. } = focused_window;
+                let focused_application = app_id
+                    .or_else(|| window_properties
+                        .and_then(|p| p.instance.or(p.class).or(p.title)));
+                if let Some((x_offset, y_offset)) = offsets
+                    .get(focused_application.as_deref().unwrap_or("none"))
+                {
+                    x += x_offset;
+                    y += y_offset;
+                }
+
+                libinput.dispatch().unwrap();
+
+                conn.run_command(format!("
+                    seat seat0 cursor set {x} {y}
+                ")).unwrap();
+
+                javelin = true;
+                continue
+            }
+
+            if javelin && delta_time > javelin_cooldown {
+                conn.run_command(format!("
+                    input type:touchpad pointer_accel {pointer_acceleration}
+                ")).unwrap();
+
+                javelin = false;
+                continue
+            }
+
+            if delta_time > pointer_cooldown {
+                conn.run_command(format!("
+                    input type:touchpad pointer_accel {javelin_acceleration}
+                ")).unwrap();
+
+                javelin = true;
+                continue
+            }
+
+            if javelin {
+                conn.run_command("seat seat0 cursor move 0 10").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move -10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move -10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 0 10").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move -10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 0 10").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move -10 0").unwrap();
+                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
+                conn.run_command("seat seat0 cursor move 0 10").unwrap();
+            }
+
+        } else if let scroll_event @ (
+            __::ScrollContinuous(_) | __::ScrollFinger(_) | __::ScrollWheel(_)
+        ) = event {
+            past_event_time = scroll_event.time();
+            javelin = false
         }
     }
 }
@@ -125,42 +214,29 @@ struct Args {
     #[clap(display_order=0, long, default_value = "/dev/input/event14")]
     trackpoint_device: String,
 
-    #[clap(display_order=0, long, default_value = "1.0")]
-    touchpad_pointer_accel: f32,
+    #[clap(display_order=0, long, default_value = "-0.2")]
+    pointer_acceleration: f32,
 
-    #[clap(display_order=0, long, default_value = "5.0")]
-    touchpad_scroll_factor: f32,
+    #[clap(display_order=0, long, default_value = "0.8")]
+    javelin_acceleration: f32,
 
-    #[clap(display_order=0, long, default_value = "0")]
-    trackpoint_pointer_accel: f32,
+    #[clap(display_order=0, long, default_value = "400")]
+    pointer_cooldown: u32,
 
-    #[clap(display_order=0, long, default_value = "0")]
-    trackpoint_scroll_factor: f32,
+    #[clap(display_order=0, long, default_value = "60")]
+    javelin_cooldown: u32,
+
+    #[clap(display_order=0, long, default_value = "4096")]
+    reload_msec: u32,
+
+    #[clap(display_order=0, long, default_value = "600000")]
+    tremble_nsec: u64,
 
     #[clap(display_order=0, long, default_value = "2")]
-    x_ratio: i32,
+    x_split_reload: i32,
 
     #[clap(display_order=0, long, default_value = "2")]
-    y_ratio: i32,
-
-    #[clap(display_order=0, long, default_value = "500")]
-    reset_msec: u32,
-
-    #[clap(display_order=0, long, default_value = "100")]
-    precision_mode_msec: u32,
-
-    #[clap(display_order=0, long, default_value = "300")]
-    precision_mode_withdraw_msec: u32,
-
-    #[clap(display_order=0, long, default_value = "5")]
-    precision_factor: f32,
-
-    #[clap(display_order=0, long, default_value = "470")]
-    trackpoint_withdraw_msec: u32,
-
-    #[clap(display_order=0, long, default_value = "20")]
-    scroll_deposit_msec: u32,
-
+    y_split_reload: i32,
 
     /// app_id:x:y
     offsets: Vec<String>
