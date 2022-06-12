@@ -190,12 +190,12 @@ fn main() {
 
             if javelin {
                 let delta_time = current_event_time - past_tremble_time;
+                tremble = true;
 
                 if delta_time < tremble_msec {
                     continue
                 }
 
-                tremble = true;
                 past_tremble_time = current_event_time;
 
                 let (mut x, mut y) = trembles.next().unwrap();
