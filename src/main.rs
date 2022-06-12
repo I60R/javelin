@@ -50,7 +50,7 @@ fn main() {
         pointer_cooldown,
         javelin_cooldown,
         reload_msec,
-        tremble_nsec,
+        tremble_msec,
         x_split_reload,
         y_split_reload,
         offsets
@@ -87,12 +87,36 @@ fn main() {
     let mut past_event_time = 0;
     let mut javelin = true;
 
+    let mut past_tremble_time = 0;
+    let mut tremble = true;
+    let mut trembles = [
+        (0, 15), (15, 0), (0, -15), (-15, 0), (0, 0),
+        (0, -15), (-15, 0), (0, 15), (15, 0), (0, 0),
+        (-15, 0), (0, 15), (15, 0), (0, -15), (0, 0),
+        (15, 0), (0, -15), (-15, 0), (0, 15), (0, 0),
+    ]
+        .into_iter()
+        .cycle();
+
     loop {
         libinput.dispatch().unwrap();
 
         let event = match libinput.next() {
             Some(input::Event::Pointer(ev)) => ev,
-            _ => continue
+            _ => {
+                if tremble {
+                    thread::sleep(std::time::Duration::from_millis(tremble_msec as u64));
+
+                    let (x, y) = trembles.next().unwrap();
+                    if (x, y) == (0, 0) {
+                        tremble = false;
+                        continue
+                    }
+
+                    conn.run_command(format!("seat seat0 cursor move {x} {y}")).unwrap();
+                }
+                continue
+            },
         };
 
         if let motion_event @ (__::Motion(_) | __::MotionAbsolute(_)) = event {
@@ -141,6 +165,7 @@ fn main() {
                 ")).unwrap();
 
                 javelin = true;
+                tremble = true;
                 continue
             }
 
@@ -159,41 +184,26 @@ fn main() {
                 ")).unwrap();
 
                 javelin = true;
+                tremble = true;
                 continue
             }
 
             if javelin {
-                conn.run_command("seat seat0 cursor move 0 10").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move -10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move -10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 0 10").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move -10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 0 10").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 0 -10").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move -10 0").unwrap();
-                thread::sleep(std::time::Duration::from_nanos(tremble_nsec));
-                conn.run_command("seat seat0 cursor move 0 10").unwrap();
+                let delta_time = current_event_time - past_tremble_time;
+
+                if delta_time < tremble_msec {
+                    continue
+                }
+
+                tremble = true;
+                past_tremble_time = current_event_time;
+
+                let (mut x, mut y) = trembles.next().unwrap();
+                if (x, y) == (0, 0) {
+                    (x, y) = trembles.next().unwrap();
+                }
+
+                conn.run_command(format!("seat seat0 cursor move {x} {y}")).unwrap();
             }
 
         } else if let scroll_event @ (
@@ -217,7 +227,7 @@ struct Args {
     #[clap(display_order=0, long, default_value = "-0.2")]
     pointer_acceleration: f32,
 
-    #[clap(display_order=0, long, default_value = "0.8")]
+    #[clap(display_order=0, long, default_value = "0.9")]
     javelin_acceleration: f32,
 
     #[clap(display_order=0, long, default_value = "400")]
@@ -229,8 +239,8 @@ struct Args {
     #[clap(display_order=0, long, default_value = "4096")]
     reload_msec: u32,
 
-    #[clap(display_order=0, long, default_value = "600000")]
-    tremble_nsec: u64,
+    #[clap(display_order=0, long, default_value = "32")]
+    tremble_msec: u32,
 
     #[clap(display_order=0, long, default_value = "2")]
     x_split_reload: i32,
