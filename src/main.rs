@@ -221,7 +221,7 @@ struct Args {
     #[clap(display_order=0, long, default_value = "/dev/input/event16")]
     touchpad_device: String,
 
-    #[clap(display_order=0, long, default_value = "/dev/input/event14")]
+    #[clap(display_order=0, long, default_value = "/dev/input/event15")]
     trackpoint_device: String,
 
     #[clap(display_order=0, long, default_value = "-0.2")]
