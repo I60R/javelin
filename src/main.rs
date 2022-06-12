@@ -119,98 +119,102 @@ fn main() {
             },
         };
 
-        if let motion_event @ (__::Motion(_) | __::MotionAbsolute(_)) = event {
+        match event {
+            __::Motion(_) | __::MotionAbsolute(_) => {
 
-            let current_event_time = motion_event.time();
-            let delta_time;
+                let current_event_time = event.time();
+                let delta_time;
 
-            (past_event_time, delta_time) =
-                (current_event_time, current_event_time - past_event_time);
+                (past_event_time, delta_time) =
+                    (current_event_time, current_event_time - past_event_time);
 
-            if motion_event.device() != touchpad {
-                past_event_time = past_event_time.saturating_sub(pointer_cooldown);
-                javelin = false;
-                continue
-            }
-
-            if delta_time > reload_msec {
-                conn.run_command(format!("
-                    input type:touchpad pointer_accel {javelin_acceleration}
-                ")).unwrap();
-
-                libinput.dispatch().unwrap();
-
-                let focused_window = conn.get_tree().unwrap()
-                    .find_focused(|n| n.nodes.is_empty()).unwrap();
-                let Rect { mut x, mut y, width, height, .. } = focused_window.rect;
-                (x, y) = (
-                    x + width / x_split_reload,
-                    y + height / y_split_reload
-                );
-                let Node { app_id, window_properties, .. } = focused_window;
-                let focused_application = app_id
-                    .or_else(|| window_properties
-                        .and_then(|p| p.instance.or(p.class).or(p.title)));
-                if let Some((x_offset, y_offset)) = offsets
-                    .get(focused_application.as_deref().unwrap_or("none"))
-                {
-                    x += x_offset;
-                    y += y_offset;
-                }
-
-                libinput.dispatch().unwrap();
-
-                conn.run_command(format!("
-                    seat seat0 cursor set {x} {y}
-                ")).unwrap();
-
-                javelin = true;
-                tremble = true;
-                continue
-            }
-
-            if javelin && delta_time > javelin_cooldown {
-                conn.run_command(format!("
-                    input type:touchpad pointer_accel {pointer_acceleration}
-                ")).unwrap();
-
-                javelin = false;
-                continue
-            }
-
-            if delta_time > pointer_cooldown {
-                conn.run_command(format!("
-                    input type:touchpad pointer_accel {javelin_acceleration}
-                ")).unwrap();
-
-                javelin = true;
-                tremble = true;
-                continue
-            }
-
-            if javelin {
-                let delta_time = current_event_time - past_tremble_time;
-                tremble = true;
-
-                if delta_time < tremble_msec {
+                if event.device() != touchpad {
+                    past_event_time = past_event_time.saturating_sub(pointer_cooldown);
+                    javelin = false;
                     continue
                 }
 
-                past_tremble_time = current_event_time;
+                if delta_time > reload_msec {
+                    conn.run_command(format!("
+                        input type:touchpad pointer_accel {javelin_acceleration}
+                    ")).unwrap();
 
-                let (mut x, mut y) = trembles.next().unwrap();
-                if (x, y) == (0, 0) {
-                    (x, y) = trembles.next().unwrap();
+                    libinput.dispatch().unwrap();
+
+                    let focused_window = conn.get_tree().unwrap()
+                        .find_focused(|n| n.nodes.is_empty()).unwrap();
+                    let Rect { mut x, mut y, width, height, .. } = focused_window.rect;
+                    (x, y) = (
+                        x + width / x_split_reload,
+                        y + height / y_split_reload
+                    );
+                    let Node { app_id, window_properties, .. } = focused_window;
+                    let focused_application = app_id
+                        .or_else(|| window_properties
+                            .and_then(|p| p.instance.or(p.class).or(p.title)));
+                    if let Some((x_offset, y_offset)) = offsets
+                        .get(focused_application.as_deref().unwrap_or("none"))
+                    {
+                        x += x_offset;
+                        y += y_offset;
+                    }
+
+                    libinput.dispatch().unwrap();
+
+                    conn.run_command(format!("
+                        seat seat0 cursor set {x} {y}
+                    ")).unwrap();
+
+                    javelin = true;
+                    tremble = true;
+                    continue
                 }
 
-                conn.run_command(format!("seat seat0 cursor move {x} {y}")).unwrap();
-            }
+                if javelin && delta_time > javelin_cooldown {
+                    conn.run_command(format!("
+                        input type:touchpad pointer_accel {pointer_acceleration}
+                    ")).unwrap();
 
-        } else if let scroll_event @ (
-            __::ScrollContinuous(_) | __::ScrollFinger(_) | __::ScrollWheel(_)
-        ) = event {
-            past_event_time = scroll_event.time();
-            javelin = false
+                    javelin = false;
+                    continue
+                }
+
+                if delta_time > pointer_cooldown {
+                    conn.run_command(format!("
+                        input type:touchpad pointer_accel {javelin_acceleration}
+                    ")).unwrap();
+
+                    javelin = true;
+                    tremble = true;
+                    continue
+                }
+
+                if javelin {
+                    let delta_time = current_event_time - past_tremble_time;
+                    tremble = true;
+
+                    if delta_time < tremble_msec {
+                        continue
+                    }
+
+                    past_tremble_time = current_event_time;
+
+                    let (mut x, mut y) = trembles.next().unwrap();
+                    if (x, y) == (0, 0) {
+                        (x, y) = trembles.next().unwrap();
+                    }
+
+                    conn.run_command(format!("seat seat0 cursor move {x} {y}")).unwrap();
+                }
+            },
+
+            __::ScrollContinuous(_) | __::ScrollFinger(_) | __::ScrollWheel(_) => {
+
+                past_event_time = event.time();
+                javelin = false
+            },
+
+            _ => continue
         }
     }
 }
