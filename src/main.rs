@@ -90,12 +90,23 @@ fn main() {
     let mut past_tremble_time = 0;
     let mut tremble = true;
     let mut trembles = [
-        (0, 15), (15, 0), (0, -15), (-15, 0), (0, 0),
-        (0, -15), (-15, 0), (0, 15), (15, 0), (0, 0),
-        (-15, 0), (0, 15), (15, 0), (0, -15), (0, 0),
-        (15, 0), (0, -15), (-15, 0), (0, 15), (0, 0),
+        15, 8, 10, 9, 16, 7, 18, 13, 6, 11, 19, 12, 17
     ]
         .into_iter()
+        .scan((0..8).cycle(), |dir, dist| {
+            match dir.next().unwrap() {
+                0 => Some([(0, dist), (dist, 0), (0, -dist), (-dist, 0), (0, 0)]),
+                1 => Some([(-dist, 0), (0, -dist), (dist, 0), (0, dist), (0, 0)]),
+                2 => Some([(0, dist), (-dist, 0), (0, -dist), (dist, 0), (0, 0)]),
+                3 => Some([(dist, 0), (0, -dist), (-dist, 0), (0, dist), (0, 0)]),
+                4 => Some([(dist, 0), (0, dist), (-dist, 0), (0, -dist), (0, 0)]),
+                5 => Some([(0, -dist), (-dist, 0), (0, dist), (dist, 0), (0, 0)]),
+                6 => Some([(-dist, 0), (0, dist), (dist, 0), (0, -dist), (0, 0)]),
+                7 => Some([(0, -dist), (dist, 0), (0, dist), (-dist, 0), (0, 0)]),
+                _ => unreachable!()
+            }
+        })
+        .flat_map(|x| x)
         .cycle();
 
     loop {
@@ -105,7 +116,16 @@ fn main() {
             Some(input::Event::Pointer(ev)) => ev,
             _ => {
                 if tremble {
-                    thread::sleep(std::time::Duration::from_millis(tremble_msec as u64));
+
+                    let mut wait_times = tremble_msec / (tremble_msec / 6);
+
+                    while wait_times > 0 {
+
+                        libinput.dispatch().unwrap();
+                        thread::sleep(std::time::Duration::from_millis(6 as u64));
+
+                        wait_times -= 1;
+                    }
 
                     let (x, y) = trembles.next().unwrap();
                     if (x, y) == (0, 0) {
@@ -120,13 +140,13 @@ fn main() {
         };
 
         match event {
-            __::Motion(_) | __::MotionAbsolute(_) => {
+            __::Motion(_) | __::MotionAbsolute(_)=> {
 
                 let current_event_time = event.time();
                 let delta_time;
 
                 (past_event_time, delta_time) =
-                    (current_event_time, current_event_time - past_event_time);
+                    (current_event_time, current_event_time.saturating_sub(past_event_time));
 
                 if event.device() != touchpad {
                     past_event_time = past_event_time.saturating_sub(pointer_cooldown);
@@ -190,7 +210,7 @@ fn main() {
                 }
 
                 if javelin {
-                    let delta_time = current_event_time - past_tremble_time;
+                    let delta_time = current_event_time.saturating_sub(past_tremble_time);
                     tremble = true;
 
                     if delta_time < tremble_msec {
@@ -211,10 +231,11 @@ fn main() {
             __::ScrollContinuous(_) | __::ScrollFinger(_) | __::ScrollWheel(_) => {
 
                 past_event_time = event.time();
-                javelin = false
+
+                javelin = false;
             },
 
-            _ => continue
+            _ => {}
         }
     }
 }
