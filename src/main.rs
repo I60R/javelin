@@ -14,8 +14,8 @@ use std::{
         fs::OpenOptionsExt,
         io::{RawFd, FromRawFd, IntoRawFd}
     },
-    thread
 };
+
 
 // Interface implementation was copied from Smithay/input event loop example
 // https://github.com/Smithay/input.rs/tree/1d83b2e868bc408f272c0df3cd9ac2a4#usage
@@ -39,8 +39,10 @@ impl LibinputInterface for Interface {
     }
 }
 
+
 fn main() {
-    let mut conn = swayipc::Connection::new().expect("Cannot connect to Sway!");
+    let mut conn = swayipc::Connection::new()
+        .expect("Cannot connect to Sway!");
 
     let Args {
         touchpad_device,
@@ -59,10 +61,17 @@ fn main() {
     let offsets: std::collections::HashMap<_, _> = offsets.iter()
         .map(|s| {
             let mut it = s.split(':');
-            let app = it.next().unwrap();
+            let app = it.next()
+                .unwrap();
             let offsets = (
-                it.next().unwrap_or("0").parse::<i32>().expect("Invalid x offset format"),
-                it.next().unwrap_or("0").parse::<i32>().expect("Invalid y offset format"),
+                it.next()
+                    .unwrap_or("0")
+                    .parse::<i32>()
+                    .expect("Invalid x offset format"),
+                it.next()
+                    .unwrap_or("0")
+                    .parse::<i32>()
+                    .expect("Invalid y offset format"),
             );
             (app, offsets)
         })
@@ -73,14 +82,18 @@ fn main() {
         mouse_warping container
         seat * hide_cursor {reload_msec}
         input type:touchpad pointer_accel {javelin_acceleration}
-    ")).unwrap();
+    "))
+    .unwrap();
 
     let mut libinput = Libinput::new_from_path(Interface);
 
-    let touchpad = libinput.path_add_device(&touchpad_device)
+    let touchpad = libinput
+        .path_add_device(&touchpad_device)
         .expect("Cannot open touchpad device");
 
-    if let None = libinput.path_add_device(&trackpoint_device) {
+    if let None = libinput
+        .path_add_device(&trackpoint_device)
+    {
         eprintln!("Cannot open trackpoint device {trackpoint_device}; SKIP")
     }
 
@@ -110,7 +123,9 @@ fn main() {
         .cycle();
 
     loop {
-        libinput.dispatch().unwrap();
+        libinput
+            .dispatch()
+            .unwrap();
 
         let event = match libinput.next() {
             Some(input::Event::Pointer(ev)) => ev,
@@ -121,20 +136,26 @@ fn main() {
 
                     while wait_times > 0 {
 
-                        libinput.dispatch().unwrap();
-                        thread::sleep(std::time::Duration::from_millis(6 as u64));
+                        libinput
+                            .dispatch()
+                            .unwrap();
+                        spin_sleep::sleep(std::time::Duration::from_millis(6 as u64));
 
                         wait_times -= 1;
                     }
 
-                    let (x, y) = trembles.next().unwrap();
+                    let (x, y) = trembles.next()
+                        .unwrap();
                     if (x, y) == (0, 0) {
                         tremble = false;
+
                         continue
                     }
 
-                    conn.run_command(format!("seat seat0 cursor move {x} {y}")).unwrap();
+                    conn.run_command(format!("seat seat0 cursor move {x} {y}"))
+                        .unwrap();
                 }
+
                 continue
             },
         };
@@ -151,61 +172,83 @@ fn main() {
                 if event.device() != touchpad {
                     past_event_time = past_event_time.saturating_sub(pointer_cooldown);
                     javelin = false;
+
                     continue
                 }
 
                 if delta_time > reload_msec {
                     conn.run_command(format!("
                         input type:touchpad pointer_accel {javelin_acceleration}
-                    ")).unwrap();
+                    "))
+                    .unwrap();
 
-                    libinput.dispatch().unwrap();
+                    libinput
+                        .dispatch()
+                        .unwrap();
 
-                    let focused_window = conn.get_tree().unwrap()
-                        .find_focused(|n| n.nodes.is_empty()).unwrap();
+                    let focused_window = conn
+                        .get_tree()
+                        .unwrap()
+                        .find_focused(|n| n.nodes.is_empty())
+                        .unwrap();
+
                     let Rect { mut x, mut y, width, height, .. } = focused_window.rect;
                     (x, y) = (
                         x + width / x_split_reload,
                         y + height / y_split_reload
                     );
                     let Node { app_id, window_properties, .. } = focused_window;
+
                     let focused_application = app_id
                         .or_else(|| window_properties
-                            .and_then(|p| p.instance.or(p.class).or(p.title)));
+                            .and_then(|p| p.instance
+                                .or(p.class)
+                                .or(p.title)));
                     if let Some((x_offset, y_offset)) = offsets
-                        .get(focused_application.as_deref().unwrap_or("none"))
+                        .get(focused_application
+                            .as_deref()
+                            .unwrap_or("none")
+                        )
                     {
                         x += x_offset;
                         y += y_offset;
                     }
 
-                    libinput.dispatch().unwrap();
+                    libinput
+                        .dispatch()
+                        .unwrap();
 
                     conn.run_command(format!("
                         seat seat0 cursor set {x} {y}
-                    ")).unwrap();
+                    "))
+                    .unwrap();
 
                     javelin = true;
                     tremble = true;
+
                     continue
                 }
 
                 if javelin && delta_time > javelin_cooldown {
                     conn.run_command(format!("
                         input type:touchpad pointer_accel {pointer_acceleration}
-                    ")).unwrap();
+                    "))
+                    .unwrap();
 
                     javelin = false;
+
                     continue
                 }
 
                 if delta_time > pointer_cooldown {
                     conn.run_command(format!("
                         input type:touchpad pointer_accel {javelin_acceleration}
-                    ")).unwrap();
+                    "))
+                    .unwrap();
 
                     javelin = true;
                     tremble = true;
+
                     continue
                 }
 
@@ -219,12 +262,15 @@ fn main() {
 
                     past_tremble_time = current_event_time;
 
-                    let (mut x, mut y) = trembles.next().unwrap();
+                    let (mut x, mut y) = trembles.next()
+                        .unwrap();
                     if (x, y) == (0, 0) {
-                        (x, y) = trembles.next().unwrap();
+                        (x, y) = trembles.next()
+                            .unwrap();
                     }
 
-                    conn.run_command(format!("seat seat0 cursor move {x} {y}")).unwrap();
+                    conn.run_command(format!("seat seat0 cursor move {x} {y}"))
+                        .unwrap();
                 }
             },
 
@@ -240,6 +286,7 @@ fn main() {
     }
 }
 
+
 #[derive(Parser)]
 #[clap(author, version, global_setting = AppSettings::DeriveDisplayOrder)]
 struct Args {
@@ -252,13 +299,13 @@ struct Args {
     #[clap(display_order=0, long, default_value = "-0.2")]
     pointer_acceleration: f32,
 
-    #[clap(display_order=0, long, default_value = "0.9")]
+    #[clap(display_order=0, long, default_value = "0.8")]
     javelin_acceleration: f32,
 
     #[clap(display_order=0, long, default_value = "400")]
     pointer_cooldown: u32,
 
-    #[clap(display_order=0, long, default_value = "60")]
+    #[clap(display_order=0, long, default_value = "32")]
     javelin_cooldown: u32,
 
     #[clap(display_order=0, long, default_value = "4096")]
