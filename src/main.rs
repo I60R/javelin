@@ -14,6 +14,10 @@ use std::{
         fs::OpenOptionsExt,
         io::{RawFd, FromRawFd, IntoRawFd}
     },
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    }
 };
 
 
@@ -41,6 +45,15 @@ impl LibinputInterface for Interface {
 
 
 fn main() {
+    let terminate = Arc::new(AtomicBool::default());
+
+    for sig in signal_hook::consts::TERM_SIGNALS {
+
+        let sig_handler = Arc::clone(&terminate);
+        signal_hook::flag::register(*sig, sig_handler)
+            .unwrap();
+    }
+
     let mut conn = swayipc::Connection::new()
         .expect("Cannot connect to Sway!");
 
@@ -148,12 +161,21 @@ fn main() {
                         .unwrap();
                     if (x, y) == (0, 0) {
                         tremble = false;
-
-                        continue
+                    } else {
+                        conn.run_command(format!("seat seat0 cursor move {x} {y}"))
+                            .unwrap();
                     }
+                }
 
-                    conn.run_command(format!("seat seat0 cursor move {x} {y}"))
-                        .unwrap();
+                if terminate.load(Ordering::Relaxed) {
+
+                    conn.run_command(format!("
+                        input type:touchpad pointer_accel 0
+                        seat * hide_cursor 0
+                    "))
+                    .unwrap();
+
+                    return
                 }
 
                 continue
@@ -161,7 +183,7 @@ fn main() {
         };
 
         match event {
-            __::Motion(_) | __::MotionAbsolute(_)=> {
+            __::Motion(_) | __::MotionAbsolute(_) => {
 
                 let current_event_time = event.time();
                 let delta_time;

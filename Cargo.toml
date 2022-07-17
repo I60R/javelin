@@ -7,5 +7,6 @@ edition = "2021"
 clap = { version = "3.1.5", features = ["derive"] }
 input = "0.7.1"
 libc = "0.2.119"
+signal-hook = "0.3.14"
 spin_sleep = "1.1.1"
 swayipc = "3.0.0"
