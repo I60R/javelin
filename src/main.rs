@@ -54,12 +54,14 @@ fn main() {
             .unwrap();
     }
 
+
     let mut conn = swayipc::Connection::new()
         .expect("Cannot connect to Sway!");
 
+
     let Args {
-        touchpad_device,
-        trackpoint_device,
+        device,
+        r#type,
         pointer_acceleration,
         javelin_acceleration,
         pointer_cooldown,
@@ -90,25 +92,62 @@ fn main() {
         })
         .collect();
 
+    let r#type = r#type
+        .unwrap_or("touchpad".to_string());
+
+
+    let mut libinput = Libinput::new_from_path(Interface);
+
+
+    let device_path = device.unwrap_or_else(|| {
+
+        let mut event_mouse_devices = vec![];
+
+        for entry in
+            std::fs::read_dir("/dev/input/by-path")
+                .expect("Cannot inspect /dev/input/by-path directory")
+                .map(|p| p
+                    .expect("Cannot inspect some input device")
+                )
+        {
+            let device_path = entry
+                .path()
+                .to_string_lossy()
+                .to_string();
+
+            if device_path.contains("event-mouse") {
+                event_mouse_devices
+                    .push(device_path)
+            }
+        }
+
+        event_mouse_devices
+            .sort();
+
+        println!("The following devices were found: {event_mouse_devices:#?}");
+
+        if event_mouse_devices.len() < 2 {
+            eprintln!("Javelin could be annoying with only one pointer device available")
+        }
+
+        event_mouse_devices
+            .pop()
+            .expect("No pointer devices were found")
+    });
+
+    let pointer_device = libinput
+        .path_add_device(&device_path)
+        .expect("Cannot open pointer device");
+
+
     conn.run_command(format!("
         focus_follows_mouse always
         mouse_warping container
         seat * hide_cursor {reload_msec}
-        input type:touchpad pointer_accel {javelin_acceleration}
+        input type:{type} pointer_accel {javelin_acceleration}
     "))
     .unwrap();
 
-    let mut libinput = Libinput::new_from_path(Interface);
-
-    let touchpad = libinput
-        .path_add_device(&touchpad_device)
-        .expect("Cannot open touchpad device");
-
-    if let None = libinput
-        .path_add_device(&trackpoint_device)
-    {
-        eprintln!("Cannot open trackpoint device {trackpoint_device}; SKIP")
-    }
 
     let mut past_event_time = 0;
     let mut javelin = true;
@@ -134,6 +173,7 @@ fn main() {
         })
         .flat_map(|x| x)
         .cycle();
+
 
     loop {
         libinput
@@ -170,7 +210,7 @@ fn main() {
                 if terminate.load(Ordering::Relaxed) {
 
                     conn.run_command(format!("
-                        input type:touchpad pointer_accel 0
+                        input type:{type} pointer_accel 0
                         seat * hide_cursor 0
                     "))
                     .unwrap();
@@ -191,7 +231,7 @@ fn main() {
                 (past_event_time, delta_time) =
                     (current_event_time, current_event_time.saturating_sub(past_event_time));
 
-                if event.device() != touchpad {
+                if event.device() != pointer_device {
                     past_event_time = past_event_time.saturating_sub(pointer_cooldown);
                     javelin = false;
 
@@ -200,7 +240,7 @@ fn main() {
 
                 if delta_time > reload_msec {
                     conn.run_command(format!("
-                        input type:touchpad pointer_accel {javelin_acceleration}
+                        input type:{type} pointer_accel {javelin_acceleration}
                     "))
                     .unwrap();
 
@@ -253,7 +293,7 @@ fn main() {
 
                 if javelin && delta_time > javelin_cooldown {
                     conn.run_command(format!("
-                        input type:touchpad pointer_accel {pointer_acceleration}
+                        input type:{type} pointer_accel {pointer_acceleration}
                     "))
                     .unwrap();
 
@@ -264,7 +304,7 @@ fn main() {
 
                 if delta_time > pointer_cooldown {
                     conn.run_command(format!("
-                        input type:touchpad pointer_accel {javelin_acceleration}
+                        input type:{type} pointer_accel {javelin_acceleration}
                     "))
                     .unwrap();
 
@@ -312,11 +352,11 @@ fn main() {
 #[derive(Parser)]
 #[clap(author, version, global_setting = AppSettings::DeriveDisplayOrder)]
 struct Args {
-    #[clap(display_order=0, long, default_value = "/dev/input/event16")]
-    touchpad_device: String,
+    #[clap(display_order=0, long, requires = "type")]
+    device: Option<String>,
 
-    #[clap(display_order=0, long, default_value = "/dev/input/event15")]
-    trackpoint_device: String,
+    #[clap(display_order=0, long)]
+    r#type: Option<String>,
 
     #[clap(display_order=0, long, default_value = "-0.2")]
     pointer_acceleration: f32,
