@@ -59,6 +59,9 @@ fn main() {
         .expect("Cannot connect to Sway!");
 
 
+    let args = Args::parse();
+    println!("{args:#?}");
+
     let Args {
         device,
         r#type,
@@ -71,7 +74,8 @@ fn main() {
         x_split_reload,
         y_split_reload,
         offsets
-    } = Args::parse();
+    } = args;
+
 
     let offsets: std::collections::HashMap<_, _> = offsets.iter()
         .map(|s| {
@@ -92,7 +96,7 @@ fn main() {
         })
         .collect();
 
-    let r#type = r#type
+    let device_type = r#type
         .unwrap_or("touchpad".to_string());
 
 
@@ -124,7 +128,7 @@ fn main() {
         event_mouse_devices
             .sort();
 
-        println!("The following devices were found: {event_mouse_devices:#?}");
+        println!("The following pointer devices were found: {event_mouse_devices:#?}");
 
         if event_mouse_devices.len() < 2 {
             eprintln!("Javelin could be annoying with only one pointer device available")
@@ -144,7 +148,7 @@ fn main() {
         focus_follows_mouse always
         mouse_warping container
         seat * hide_cursor {reload_msec}
-        input type:{type} pointer_accel {javelin_acceleration}
+        input type:{device_type} pointer_accel {javelin_acceleration}
     "))
     .unwrap();
 
@@ -209,8 +213,10 @@ fn main() {
 
                 if terminate.load(Ordering::Relaxed) {
 
+                    println!("\nGraceful shutdown");
+
                     conn.run_command(format!("
-                        input type:{type} pointer_accel 0
+                        input type:{device_type} pointer_accel 0
                         seat * hide_cursor 0
                     "))
                     .unwrap();
@@ -240,7 +246,7 @@ fn main() {
 
                 if delta_time > reload_msec {
                     conn.run_command(format!("
-                        input type:{type} pointer_accel {javelin_acceleration}
+                        input type:{device_type} pointer_accel {javelin_acceleration}
                     "))
                     .unwrap();
 
@@ -293,7 +299,7 @@ fn main() {
 
                 if javelin && delta_time > javelin_cooldown {
                     conn.run_command(format!("
-                        input type:{type} pointer_accel {pointer_acceleration}
+                        input type:{device_type} pointer_accel {pointer_acceleration}
                     "))
                     .unwrap();
 
@@ -304,7 +310,7 @@ fn main() {
 
                 if delta_time > pointer_cooldown {
                     conn.run_command(format!("
-                        input type:{type} pointer_accel {javelin_acceleration}
+                        input type:{device_type} pointer_accel {javelin_acceleration}
                     "))
                     .unwrap();
 
@@ -349,7 +355,7 @@ fn main() {
 }
 
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[clap(author, version, global_setting = AppSettings::DeriveDisplayOrder)]
 struct Args {
     #[clap(display_order=0, long, requires = "type")]
