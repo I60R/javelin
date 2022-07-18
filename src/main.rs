@@ -17,7 +17,10 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-    }
+    },
+    error::Error,
+    time::Duration,
+    collections::HashMap
 };
 
 
@@ -57,14 +60,34 @@ fn main() {
 
     _register_signal_handling_(&terminate);
 
-    let mut conn = swayipc::Connection::new()
+    let conn = swayipc::Connection::new()
         .expect("Cannot connect to Sway!");
 
-    let (
+    let mut libinput = Libinput::new_from_path(Interface);
+
+    let args = get_arguments();
+
+    let pointer_device = libinput
+        .path_add_device(&args.device_path)
+        .expect("Cannot open pointer device");
+
+    handle_events(conn, libinput, terminate, pointer_device, args)
+        .unwrap()
+}
+
+
+fn handle_events(
+    mut conn: swayipc::Connection,
+    mut libinput: Libinput,
+    terminate: Arc<AtomicBool>,
+    pointer_device: input::Device,
+    args: ArgContext,
+) -> Result<(), Box<dyn Error>> {
+
+    let ArgContext {
         offsets,
-        device_path,
         device_type,
-        Args {
+        args: Args {
             pointer_acceleration,
             javelin_acceleration,
             pointer_cooldown,
@@ -74,24 +97,16 @@ fn main() {
             x_split_reload,
             y_split_reload,
             ..
-        }
-    ) = get_arguments();
-
-    let mut libinput = Libinput::new_from_path(Interface);
-
-    let pointer_device = libinput
-        .path_add_device(&device_path)
-        .expect("Cannot open pointer device");
-
+        },
+        ..
+    } = args;
 
     conn.run_command(format!("
         focus_follows_mouse always
         mouse_warping container
         seat * hide_cursor {reload_msec}
         input type:{device_type} pointer_accel {javelin_acceleration}
-    "))
-    .unwrap();
-
+    "))?;
 
     let mut past_event_time = 0;
     let mut javelin = true;
@@ -119,7 +134,7 @@ fn main() {
 
                         dispatch!(libinput);
 
-                        spin_sleep::sleep(std::time::Duration::from_millis(6 as u64));
+                        spin_sleep::sleep(Duration::from_millis(6 as u64));
 
                         wait_times -= 1;
                     }
@@ -128,8 +143,7 @@ fn main() {
                     if (x, y) == (0, 0) {
                         trembling = false;
                     } else {
-                        conn.run_command(format!("seat seat0 cursor move {x} {y}"))
-                            .unwrap();
+                        conn.run_command(format!("seat seat0 cursor move {x} {y}"))?;
                     }
                 }
 
@@ -140,8 +154,7 @@ fn main() {
                     conn.run_command(format!("
                         input type:{device_type} pointer_accel 0
                         seat * hide_cursor 0
-                    "))
-                    .unwrap();
+                    "))?;
 
                     std::process::exit(0)
                 }
@@ -169,16 +182,14 @@ fn main() {
                 if delta_time > reload_msec {
                     conn.run_command(format!("
                         input type:{device_type} pointer_accel {javelin_acceleration}
-                    "))
-                    .unwrap();
+                    "))?;
 
                     dispatch!(libinput);
 
                     let focused_window = conn
-                        .get_tree()
-                        .unwrap()
+                        .get_tree()?
                         .find_focused(|n| n.nodes.is_empty())
-                        .unwrap();
+                        .expect("Cannot get focused container");
 
                     let Rect { mut x, mut y, width, height, .. } = focused_window.rect;
                     (x, y) = (
@@ -192,6 +203,7 @@ fn main() {
                             .and_then(|p| p.instance
                                 .or(p.class)
                                 .or(p.title)));
+
                     if let Some((x_offset, y_offset)) = offsets
                         .get(focused_application
                             .as_deref()
@@ -206,8 +218,7 @@ fn main() {
 
                     conn.run_command(format!("
                         seat seat0 cursor set {x} {y}
-                    "))
-                    .unwrap();
+                    "))?;
 
                     javelin = true;
                     trembling = true;
@@ -218,8 +229,7 @@ fn main() {
                 if javelin && delta_time > javelin_cooldown {
                     conn.run_command(format!("
                         input type:{device_type} pointer_accel {pointer_acceleration}
-                    "))
-                    .unwrap();
+                    "))?;
 
                     javelin = false;
 
@@ -229,8 +239,7 @@ fn main() {
                 if delta_time > pointer_cooldown {
                     conn.run_command(format!("
                         input type:{device_type} pointer_accel {javelin_acceleration}
-                    "))
-                    .unwrap();
+                    "))?;
 
                     javelin = true;
                     trembling = true;
@@ -253,8 +262,7 @@ fn main() {
                         (x, y) = tremble();
                     }
 
-                    conn.run_command(format!("seat seat0 cursor move {x} {y}"))
-                        .unwrap();
+                    conn.run_command(format!("seat seat0 cursor move {x} {y}"))?;
                 }
             },
 
@@ -276,20 +284,37 @@ fn _register_signal_handling_(terminate: &Arc<AtomicBool>) {
 
         let sig_handler = Arc::clone(terminate);
         signal_hook::flag::register(*sig, sig_handler)
-            .unwrap();
+            .expect("Cannot register signal handler");
     }
 }
 
 
-type Offsets = std::collections::HashMap<String, (i32, i32)>;
-type DevicePath = String;
-type DeviceType = String;
+fn trembles() -> impl Iterator<Item = (i32, i32)> {
+    [ 15, 8, 10, 9, 16, 7, 18, 13, 6, 11, 19, 12, 17 ]
+        .into_iter()
+        .scan((0..8).cycle(), |dir, dist| {
+            match dir.next().unwrap() {
+                0 => Some([(0, dist), (dist, 0), (0, -dist), (-dist, 0), (0, 0)]),
+                1 => Some([(-dist, 0), (0, -dist), (dist, 0), (0, dist), (0, 0)]),
+                2 => Some([(0, dist), (-dist, 0), (0, -dist), (dist, 0), (0, 0)]),
+                3 => Some([(dist, 0), (0, -dist), (-dist, 0), (0, dist), (0, 0)]),
+                4 => Some([(dist, 0), (0, dist), (-dist, 0), (0, -dist), (0, 0)]),
+                5 => Some([(0, -dist), (-dist, 0), (0, dist), (dist, 0), (0, 0)]),
+                6 => Some([(-dist, 0), (0, dist), (dist, 0), (0, -dist), (0, 0)]),
+                7 => Some([(0, -dist), (dist, 0), (0, dist), (-dist, 0), (0, 0)]),
+                _ => unreachable!()
+            }
+        })
+        .flat_map(|x| x)
+        .cycle()
+}
 
-fn get_arguments() -> (Offsets, DevicePath, DeviceType, Args) {
+
+fn get_arguments() -> ArgContext {
     let args = Args::parse();
     println!("{args:#?}");
 
-    let offsets: Offsets = args.offsets.iter()
+    let offsets = args.offsets.iter()
         .map(|s| {
             let mut app_x_y = s.split(':');
 
@@ -352,30 +377,20 @@ fn get_arguments() -> (Offsets, DevicePath, DeviceType, Args) {
                 .expect("No pointer devices were found")
         });
 
-    (offsets, device_path, device_type, args)
+    ArgContext {
+        args,
+        offsets,
+        device_path,
+        device_type,
+    }
 }
 
 
-fn trembles() -> impl Iterator<Item = (i32, i32)> {
-    [
-        15, 8, 10, 9, 16, 7, 18, 13, 6, 11, 19, 12, 17
-    ]
-        .into_iter()
-        .scan((0..8).cycle(), |dir, dist| {
-            match dir.next().unwrap() {
-                0 => Some([(0, dist), (dist, 0), (0, -dist), (-dist, 0), (0, 0)]),
-                1 => Some([(-dist, 0), (0, -dist), (dist, 0), (0, dist), (0, 0)]),
-                2 => Some([(0, dist), (-dist, 0), (0, -dist), (dist, 0), (0, 0)]),
-                3 => Some([(dist, 0), (0, -dist), (-dist, 0), (0, dist), (0, 0)]),
-                4 => Some([(dist, 0), (0, dist), (-dist, 0), (0, -dist), (0, 0)]),
-                5 => Some([(0, -dist), (-dist, 0), (0, dist), (dist, 0), (0, 0)]),
-                6 => Some([(-dist, 0), (0, dist), (dist, 0), (0, -dist), (0, 0)]),
-                7 => Some([(0, -dist), (dist, 0), (0, dist), (-dist, 0), (0, 0)]),
-                _ => unreachable!()
-            }
-        })
-        .flat_map(|x| x)
-        .cycle()
+struct ArgContext {
+    args: Args,
+    device_type: String,
+    device_path: String,
+    offsets: HashMap<String, (i32, i32)>
 }
 
 
