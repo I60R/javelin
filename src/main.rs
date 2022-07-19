@@ -343,38 +343,48 @@ fn get_arguments() -> ArgContext {
     let device_path = args.device
         .clone()
         .unwrap_or_else(|| {
-            let mut event_mouse_devices = vec![];
+            let list_devices_output = std::process::Command::new("libinput")
+                .arg("list-devices")
+                .output()
+                .expect("Error executing `libinput list-devices`");
 
-            for entry in
-                std::fs::read_dir("/dev/input/by-path")
-                    .expect("Cannot inspect /dev/input/by-path directory")
-                    .map(|p| p
-                        .expect("Cannot inspect some input device")
-                    )
+            if !list_devices_output.status.success() {
+                panic!("Error executing `libinput list-devices`: {list_devices_output:#?}")
+            }
+
+            let libinput_devices = String::from_utf8(list_devices_output.stdout)
+                .expect("Invalid `libinput list-devices` output");
+
+            for dev_descr in libinput_devices
+                .split("\n\n")
             {
-                let device_path = entry
-                    .path()
-                    .to_string_lossy()
-                    .to_string();
+                let mut descr_lines = dev_descr
+                    .split('\n');
 
-                if device_path.contains("event-mouse") {
-                    event_mouse_devices
-                        .push(device_path)
+                let dev_name = descr_lines
+                    .next()
+                    .expect("Cannot get device name")
+                    .to_ascii_lowercase();
+
+                if dev_name.contains("touchpad") ||
+                    dev_name.contains("touch pad")
+                {
+                    let dev_path = descr_lines
+                        .next()
+                        .expect("Cannot get device path")
+                        .split(":")
+                        .nth(1)
+                        .expect("Invalid device path line")
+                        .trim()
+                        .to_string();
+
+                    println!("\n[Use touchpad device]\n{dev_descr}\n");
+
+                    return dev_path
                 }
             }
 
-            event_mouse_devices
-                .sort();
-
-            println!("The following pointer devices were found: {event_mouse_devices:#?}");
-
-            if event_mouse_devices.len() < 2 {
-                eprintln!("Javelin could be annoying with only one pointer device available")
-            }
-
-            event_mouse_devices
-                .pop()
-                .expect("No pointer devices were found")
+            panic!("No touchpad device detected: specify it through --device flag")
         });
 
     ArgContext {
