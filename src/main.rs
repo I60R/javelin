@@ -407,10 +407,10 @@ struct ArgContext {
 #[derive(Parser, Debug)]
 #[clap(author, version, global_setting = AppSettings::DeriveDisplayOrder)]
 struct Args {
-    #[clap(display_order=0, long, requires = "type")]
+    #[clap(display_order=0, long, requires = "device-type")]
     device: Option<String>,
 
-    #[clap(display_order=0, name = "type")]
+    #[clap(display_order=0, long)]
     device_type: Option<String>,
 
     #[clap(display_order=0, long, default_value = "-0.2")]
