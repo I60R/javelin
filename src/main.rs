@@ -315,25 +315,7 @@ fn get_arguments() -> ArgContext {
     println!("{args:#?}");
 
     let offsets = args.offsets.iter()
-        .map(|s| {
-            let mut app_x_y = s.split(':');
-
-            let app = app_x_y.next()
-                .unwrap()
-                .to_string();
-
-            let offsets = (
-                app_x_y.next()
-                    .unwrap_or("0")
-                    .parse::<i32>()
-                    .expect("Invalid x offset format"),
-                app_x_y.next()
-                    .unwrap_or("0")
-                    .parse::<i32>()
-                    .expect("Invalid y offset format"),
-            );
-            (app, offsets)
-        })
+        .map(parse_offset_value)
         .collect();
 
     let device_type = args.device_type
@@ -342,50 +324,7 @@ fn get_arguments() -> ArgContext {
 
     let device_path = args.device
         .clone()
-        .unwrap_or_else(|| {
-            let list_devices_output = std::process::Command::new("libinput")
-                .arg("list-devices")
-                .output()
-                .expect("Error executing `libinput list-devices`");
-
-            if !list_devices_output.status.success() {
-                panic!("Error executing `libinput list-devices`: {list_devices_output:#?}")
-            }
-
-            let libinput_devices = String::from_utf8(list_devices_output.stdout)
-                .expect("Invalid `libinput list-devices` output");
-
-            for dev_descr in libinput_devices
-                .split("\n\n")
-            {
-                let mut descr_lines = dev_descr
-                    .split('\n');
-
-                let dev_name = descr_lines
-                    .next()
-                    .expect("Cannot get device name")
-                    .to_ascii_lowercase();
-
-                if dev_name.contains("touchpad") ||
-                    dev_name.contains("touch pad")
-                {
-                    let dev_path = descr_lines
-                        .next()
-                        .expect("Cannot get device path")
-                        .split(":")
-                        .nth(1)
-                        .expect("Invalid device path line")
-                        .trim()
-                        .to_string();
-
-                    println!("\n[Use touchpad device]\n{dev_descr}\n");
-
-                    return dev_path
-                }
-            }
-
-            panic!("No touchpad device detected: specify it through --device flag")
-        });
+        .unwrap_or_else(detect_touchpad_device);
 
     ArgContext {
         args,
@@ -393,6 +332,74 @@ fn get_arguments() -> ArgContext {
         device_path,
         device_type,
     }
+}
+
+
+fn parse_offset_value(arg: &String) -> (String, (i32, i32)) {
+    let mut app_x_y = arg.split(':');
+
+    let app = app_x_y.next()
+        .unwrap()
+        .to_string();
+
+    let offsets = (
+        app_x_y.next()
+            .unwrap_or("0")
+            .parse::<i32>()
+            .expect("Invalid x offset format"),
+        app_x_y.next()
+            .unwrap_or("0")
+            .parse::<i32>()
+            .expect("Invalid y offset format"),
+    );
+
+    (app, offsets)
+}
+
+
+fn detect_touchpad_device() -> String {
+    let list_devices_output = std::process::Command::new("libinput")
+        .arg("list-devices")
+        .output()
+        .expect("Error executing `libinput list-devices`");
+
+    if !list_devices_output.status.success() {
+        panic!("Error executing `libinput list-devices`: {list_devices_output:#?}")
+    }
+
+    let libinput_devices = String::from_utf8(list_devices_output.stdout)
+        .expect("Invalid `libinput list-devices` output");
+
+    for dev_descr in libinput_devices
+        .split("\n\n")
+    {
+        let mut descr_lines = dev_descr
+            .split('\n');
+
+        let dev_name = descr_lines
+            .next()
+            .expect("Cannot get device name")
+            .to_ascii_lowercase();
+
+        if dev_name.contains("touchpad") ||
+            dev_name.contains("touch pad")
+        {
+            let dev_path = descr_lines
+                .next()
+                .expect("Cannot get device path")
+                .split(":")
+                .nth(1)
+                .expect("Invalid device path line")
+                .trim()
+                .to_string();
+
+            println!("\n[Use touchpad device]\n{dev_descr}\n");
+
+            return dev_path
+        }
+    }
+
+    panic!("No touchpad device detected: specify it through --device flag")
 }
 
 
