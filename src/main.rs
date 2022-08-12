@@ -134,7 +134,7 @@ fn handle_events(
 
                         dispatch!(libinput);
 
-                        spin_sleep::sleep(Duration::from_millis(6 as u64));
+                        spin_sleep::sleep(Duration::from_millis(6));
 
                         wait_times -= 1;
                     }
@@ -145,6 +145,8 @@ fn handle_events(
                     } else {
                         conn.run_command(format!("seat seat0 cursor move {x} {y}"))?;
                     }
+                } else {
+                    spin_sleep::sleep(Duration::from_millis(32));
                 }
 
                 if terminate.load(Ordering::Relaxed) {
