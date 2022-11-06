@@ -49,7 +49,8 @@ impl LibinputInterface for Interface {
 
 macro_rules! dispatch {
     ($libinput: ident) => {
-        $libinput.dispatch()
+        $libinput
+            .dispatch()
             .unwrap()
     };
 }
@@ -123,46 +124,45 @@ fn handle_events(
     loop {
         dispatch!(libinput);
 
-        let event = match libinput.next() {
-            Some(input::Event::Pointer(ev)) => ev,
-            _ => {
-                if trembling {
+        let Some(input::Event::Pointer(event))
+            = libinput.next() else {
 
-                    let mut wait_times = tremble_msec / (tremble_msec / 6);
+            if trembling {
 
-                    while wait_times > 0 {
+                let mut wait_times = tremble_msec / (tremble_msec / 6);
 
-                        dispatch!(libinput);
+                while wait_times > 0 {
 
-                        spin_sleep::sleep(Duration::from_millis(6));
+                    dispatch!(libinput);
 
-                        wait_times -= 1;
-                    }
+                    spin_sleep::sleep(Duration::from_millis(6));
 
-                    let (x, y) = tremble();
-                    if (x, y) == (0, 0) {
-                        trembling = false;
-                    } else {
-                        conn.run_command(format!("seat seat0 cursor move {x} {y}"))?;
-                    }
+                    wait_times -= 1;
+                }
+
+                let (x, y) = tremble();
+                if (x, y) == (0, 0) {
+                    trembling = false;
                 } else {
-                    spin_sleep::sleep(Duration::from_millis(32));
+                    conn.run_command(format!("seat seat0 cursor move {x} {y}"))?;
                 }
+            } else {
+                spin_sleep::sleep(Duration::from_millis(16));
+            }
 
-                if terminate.load(Ordering::Relaxed) {
+            if terminate.load(Ordering::Relaxed) {
 
-                    println!("\nGraceful shutdown");
+                println!("\nGraceful shutdown");
 
-                    conn.run_command(format!("
-                        input type:{device_type} pointer_accel 0
-                        seat * hide_cursor 0
-                    "))?;
+                conn.run_command(format!("
+                    input type:{device_type} pointer_accel 0
+                    seat * hide_cursor 0
+                "))?;
 
-                    std::process::exit(0)
-                }
+                std::process::exit(0)
+            }
 
-                continue
-            },
+            continue
         };
 
         match event {
