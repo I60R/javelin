@@ -93,7 +93,7 @@ mod main {
         println!("{args:#?}");
 
         let offsets = args.offsets.iter()
-            .map(parse_offset_value)
+            .map(get_arguments::parse_offset_value)
             .collect();
 
         let device_type = args.device_type
@@ -102,13 +102,81 @@ mod main {
 
         let device_path = args.device
             .clone()
-            .unwrap_or_else(detect_touchpad_device);
+            .unwrap_or_else(get_arguments::detect_touchpad_device);
 
         ArgContext {
             args,
             offsets,
             device_path,
             device_type,
+        }
+    }
+
+    mod get_arguments {
+        pub fn parse_offset_value(arg: &String) -> (String, (i32, i32)) {
+            let mut app_x_y = arg.split(':');
+
+            let app = app_x_y.next()
+                .unwrap()
+                .to_string();
+
+            let offsets = (
+                app_x_y.next()
+                    .unwrap_or("0")
+                    .parse::<i32>()
+                    .expect("Invalid x offset format"),
+                app_x_y.next()
+                    .unwrap_or("0")
+                    .parse::<i32>()
+                    .expect("Invalid y offset format"),
+            );
+
+            (app, offsets)
+        }
+
+        pub fn detect_touchpad_device() -> String {
+            let list_devices_output = std::process::Command::new("libinput")
+                .arg("list-devices")
+                .output()
+                .expect("Error executing `libinput list-devices`");
+
+            if !list_devices_output.status.success() {
+                panic!("Error executing `libinput list-devices`: {list_devices_output:#?}")
+            }
+
+            let libinput_devices = String::from_utf8(list_devices_output.stdout)
+                .expect("Invalid `libinput list-devices` output");
+
+            for dev_descr in libinput_devices
+                .split("\n\n")
+            {
+                let mut descr_lines = dev_descr
+                    .split('\n');
+
+                let dev_name = descr_lines
+                    .next()
+                    .expect("Cannot get device name")
+                    .to_ascii_lowercase();
+
+                if dev_name.contains("touchpad") ||
+                    dev_name.contains("touch pad")
+                {
+                    let dev_path = descr_lines
+                        .next()
+                        .expect("Cannot get device path")
+                        .split(":")
+                        .nth(1)
+                        .expect("Invalid device path line")
+                        .trim()
+                        .to_string();
+
+                    println!("\n[Use touchpad device]\n{dev_descr}\n");
+
+                    return dev_path
+                }
+            }
+
+            panic!("No touchpad device detected: specify it through --device flag")
         }
     }
 }
@@ -151,7 +219,7 @@ fn handle_events(
 
     let mut past_tremble_time = 0;
     let mut trembling = true;
-    let mut trembles = trembles();
+    let mut trembles = handle_events::trembles();
 
     let mut tremble = || trembles
         .next()
@@ -161,8 +229,7 @@ fn handle_events(
     loop {
         dispatch!(libinput);
 
-        let Some(input::Event::Pointer(event))
-            = libinput.next() else {
+        let Some(input::Event::Pointer(event)) = libinput.next() else {
 
             if trembling {
 
@@ -317,95 +384,27 @@ fn handle_events(
     }
 }
 
-
-fn trembles() -> impl Iterator<Item = (i32, i32)> {
-    [ 15, 8, 10, 9, 16, 7, 18, 13, 6, 11, 19, 12, 17 ]
-        .into_iter()
-        .scan((0..8).cycle(), |dir, dist| {
-            match dir.next().unwrap() {
-                0 => Some([(0, dist), (dist, 0), (0, -dist), (-dist, 0), (0, 0)]),
-                1 => Some([(-dist, 0), (0, -dist), (dist, 0), (0, dist), (0, 0)]),
-                2 => Some([(0, dist), (-dist, 0), (0, -dist), (dist, 0), (0, 0)]),
-                3 => Some([(dist, 0), (0, -dist), (-dist, 0), (0, dist), (0, 0)]),
-                4 => Some([(dist, 0), (0, dist), (-dist, 0), (0, -dist), (0, 0)]),
-                5 => Some([(0, -dist), (-dist, 0), (0, dist), (dist, 0), (0, 0)]),
-                6 => Some([(-dist, 0), (0, dist), (dist, 0), (0, -dist), (0, 0)]),
-                7 => Some([(0, -dist), (dist, 0), (0, dist), (-dist, 0), (0, 0)]),
-                _ => unreachable!()
-            }
-        })
-        .flat_map(|x| x)
-        .cycle()
-}
-
-
-fn parse_offset_value(arg: &String) -> (String, (i32, i32)) {
-    let mut app_x_y = arg.split(':');
-
-    let app = app_x_y.next()
-        .unwrap()
-        .to_string();
-
-    let offsets = (
-        app_x_y.next()
-            .unwrap_or("0")
-            .parse::<i32>()
-            .expect("Invalid x offset format"),
-        app_x_y.next()
-            .unwrap_or("0")
-            .parse::<i32>()
-            .expect("Invalid y offset format"),
-    );
-
-    (app, offsets)
-}
-
-
-fn detect_touchpad_device() -> String {
-    let list_devices_output = std::process::Command::new("libinput")
-        .arg("list-devices")
-        .output()
-        .expect("Error executing `libinput list-devices`");
-
-    if !list_devices_output.status.success() {
-        panic!("Error executing `libinput list-devices`: {list_devices_output:#?}")
+mod handle_events {
+    pub fn trembles() -> impl Iterator<Item = (i32, i32)> {
+        [ 15, 8, 10, 9, 16, 7, 18, 13, 6, 11, 19, 12, 17 ]
+            .into_iter()
+            .scan((0..8).cycle(), |dir, dist| {
+                match dir.next().unwrap() {
+                    0 => Some([(0, dist), (dist, 0), (0, -dist), (-dist, 0), (0, 0)]),
+                    1 => Some([(-dist, 0), (0, -dist), (dist, 0), (0, dist), (0, 0)]),
+                    2 => Some([(0, dist), (-dist, 0), (0, -dist), (dist, 0), (0, 0)]),
+                    3 => Some([(dist, 0), (0, -dist), (-dist, 0), (0, dist), (0, 0)]),
+                    4 => Some([(dist, 0), (0, dist), (-dist, 0), (0, -dist), (0, 0)]),
+                    5 => Some([(0, -dist), (-dist, 0), (0, dist), (dist, 0), (0, 0)]),
+                    6 => Some([(-dist, 0), (0, dist), (dist, 0), (0, -dist), (0, 0)]),
+                    7 => Some([(0, -dist), (dist, 0), (0, dist), (-dist, 0), (0, 0)]),
+                    _ => unreachable!()
+                }
+            })
+            .flat_map(|x| x)
+            .cycle()
     }
-
-    let libinput_devices = String::from_utf8(list_devices_output.stdout)
-        .expect("Invalid `libinput list-devices` output");
-
-    for dev_descr in libinput_devices
-        .split("\n\n")
-    {
-        let mut descr_lines = dev_descr
-            .split('\n');
-
-        let dev_name = descr_lines
-            .next()
-            .expect("Cannot get device name")
-            .to_ascii_lowercase();
-
-        if dev_name.contains("touchpad") ||
-            dev_name.contains("touch pad")
-        {
-            let dev_path = descr_lines
-                .next()
-                .expect("Cannot get device path")
-                .split(":")
-                .nth(1)
-                .expect("Invalid device path line")
-                .trim()
-                .to_string();
-
-            println!("\n[Use touchpad device]\n{dev_descr}\n");
-
-            return dev_path
-        }
-    }
-
-    panic!("No touchpad device detected: specify it through --device flag")
 }
-
 
 pub struct ArgContext {
     args: Args,
