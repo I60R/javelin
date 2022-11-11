@@ -59,14 +59,14 @@ macro_rules! dispatch {
 fn main() {
     let terminate = Arc::new(AtomicBool::default());
 
-    _register_signal_handling_(&terminate);
+    main::register_signal_handling(&terminate);
 
     let conn = swayipc::Connection::new()
         .expect("Cannot connect to Sway!");
 
     let mut libinput = Libinput::new_from_path(Interface);
 
-    let args = get_arguments();
+    let args = main::get_arguments();
 
     let pointer_device = libinput
         .path_add_device(&args.device_path)
@@ -74,6 +74,43 @@ fn main() {
 
     handle_events(conn, libinput, terminate, pointer_device, args)
         .unwrap()
+}
+
+mod main {
+    use super::*;
+
+    pub fn register_signal_handling(terminate: &Arc<AtomicBool>) {
+        for sig in signal_hook::consts::TERM_SIGNALS {
+
+            let sig_handler = Arc::clone(terminate);
+            signal_hook::flag::register(*sig, sig_handler)
+                .expect("Cannot register signal handler");
+        }
+    }
+
+    pub fn get_arguments() -> ArgContext {
+        let args = Args::parse();
+        println!("{args:#?}");
+
+        let offsets = args.offsets.iter()
+            .map(parse_offset_value)
+            .collect();
+
+        let device_type = args.device_type
+            .clone()
+            .unwrap_or("touchpad".to_string());
+
+        let device_path = args.device
+            .clone()
+            .unwrap_or_else(detect_touchpad_device);
+
+        ArgContext {
+            args,
+            offsets,
+            device_path,
+            device_type,
+        }
+    }
 }
 
 
@@ -281,16 +318,6 @@ fn handle_events(
 }
 
 
-fn _register_signal_handling_(terminate: &Arc<AtomicBool>) {
-    for sig in signal_hook::consts::TERM_SIGNALS {
-
-        let sig_handler = Arc::clone(terminate);
-        signal_hook::flag::register(*sig, sig_handler)
-            .expect("Cannot register signal handler");
-    }
-}
-
-
 fn trembles() -> impl Iterator<Item = (i32, i32)> {
     [ 15, 8, 10, 9, 16, 7, 18, 13, 6, 11, 19, 12, 17 ]
         .into_iter()
@@ -309,31 +336,6 @@ fn trembles() -> impl Iterator<Item = (i32, i32)> {
         })
         .flat_map(|x| x)
         .cycle()
-}
-
-
-fn get_arguments() -> ArgContext {
-    let args = Args::parse();
-    println!("{args:#?}");
-
-    let offsets = args.offsets.iter()
-        .map(parse_offset_value)
-        .collect();
-
-    let device_type = args.device_type
-        .clone()
-        .unwrap_or("touchpad".to_string());
-
-    let device_path = args.device
-        .clone()
-        .unwrap_or_else(detect_touchpad_device);
-
-    ArgContext {
-        args,
-        offsets,
-        device_path,
-        device_type,
-    }
 }
 
 
@@ -405,7 +407,7 @@ fn detect_touchpad_device() -> String {
 }
 
 
-struct ArgContext {
+pub struct ArgContext {
     args: Args,
     device_type: String,
     device_path: String,
