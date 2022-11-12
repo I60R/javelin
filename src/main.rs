@@ -1,6 +1,6 @@
 extern crate libc;
 
-use clap::{Parser, AppSettings};
+use clap::Parser;
 use input::{
     event::{EventTrait, pointer::PointerEventTrait, PointerEvent as __},
     Libinput,
@@ -490,67 +490,70 @@ pub struct ArgContext {
 }
 
 #[derive(Parser, Debug)]
-#[clap(author, version, global_setting = AppSettings::DeriveDisplayOrder)]
+#[clap(
+    author,
+    version,
+)]
 struct Args {
 
-    /// Path to /dev/input/ device to use.
+    /// Path to /dev/input/ device to use. {n}
     /// With this argument device_type must be also provided
-    /// for example --device-type=touchpad
-    #[clap(display_order=0, long, requires = "device-type")]
+    /// otherwise --device-type=touchpad is implied
+    #[clap(long)]
     device: Option<String>,
 
     /// Type of --device. Read `man sway-input` for available types
-    #[clap(display_order=0, long)]
+    #[clap(long)]
     device_type: Option<String>,
 
     /// Pointer acceleration in slow mode for Sway
-    #[clap(display_order=0, long, default_value = "-0.2")]
+    #[clap(long, default_value = "-0.2")]
     pointer_acceleration: f32,
 
     /// Pointer acceleration in fast mode for Sway
-    #[clap(display_order=0, long, default_value = "0.8")]
+    #[clap(long, default_value = "0.8")]
     javelin_acceleration: f32,
 
     /// Time of pointer rest before swithcing
     /// from slow mode into fast mode
-    #[clap(display_order=0, long, default_value = "400")]
+    #[clap(long, default_value = "400")]
     pointer_cooldown: u32,
 
     /// Time of pointer rest before swithcing
     /// from fast mode into slow mode
-    #[clap(display_order=0, long, default_value = "32")]
+    #[clap(long, default_value = "32")]
     javelin_cooldown: u32,
 
     /// Time between cursor animation "frames"
-    #[clap(display_order=0, long, default_value = "32")]
+    #[clap(long, default_value = "32")]
     tremble_msec: u32,
 
     /// Time after which pointer will be hidden
     /// and next movement will start from the
     /// center of currently active window
-    #[clap(display_order=0, long, default_value = "4096")]
+    #[clap(long, default_value = "4096")]
     reload_msec: u32,
 
-    /// Used to find x position of center of window.
+    /// Used to find x position of center of window. {n}
     /// Set to 0 to reload pointer from left side
     /// and 1 to reload from right side
-    #[clap(display_order=0, long, default_value = "0.5")]
+    #[clap(long, default_value = "0.5")]
     x_split_reload: f32,
 
-    /// Used to find y position of center of window.
+    /// Used to find y position of center of window. {n}
     /// Set to 0 to reload pointer from top side
     /// and 1 to reload from bottom side
-    #[clap(display_order=0, long, default_value = "0.5")]
+    #[clap(long, default_value = "0.5")]
     y_split_reload: f32,
 
     /// Some applications have sidebars which shifts
-    /// their center at the left/right side.
+    /// their center at the left/right side. {n}
     /// If you want to reload from the center of content
     /// then specify which window and how far center is
-    /// shifted using this argument.
-    /// Format is app:x:y where
+    /// shifted using this argument. {n}
+    /// Format is app:x:y where {n}
     ///  - app can be either app_id or class or title
-    ///    refer to `man 5 sway: CRITERIA` for information
+    ///    refer to `man 5 sway: CRITERIA` for information {n}
     ///  - x and y can be negative numbers
     offsets: Vec<String>
 }
