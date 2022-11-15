@@ -144,8 +144,9 @@ fn handle_events(
     let mut trembling = true;
     let mut trembles = handle_events::trembles();
 
-    // Slightly moves cursor to create trembling animation effect
-    let mut tremble = || trembles
+    // Returns x y distances to slightly move
+    // cursor to create trembling animation effect
+    let mut next_tremble = || trembles
         .next()
         .unwrap();
 
@@ -173,7 +174,7 @@ fn handle_events(
                     wait_times -= 1;
                 }
 
-                let (x, y) = tremble();
+                let (x, y) = next_tremble();
                 if (x, y) == handle_events::STOP_TREMBLING {
                     trembling = false;
                 } else {
@@ -311,11 +312,11 @@ fn handle_events(
 
                     past_tremble_time = current_event_time;
 
-                    let (mut x, mut y) = tremble();
+                    let (mut x, mut y) = next_tremble();
 
                     // Skip through STOP_TREMBLING (0, 0) coordinates.
                     if (x, y) == handle_events::STOP_TREMBLING {
-                        (x, y) = tremble();
+                        (x, y) = next_tremble();
                     }
 
                     conn.run_command(format!("seat seat0 cursor move {x} {y}"))?;
