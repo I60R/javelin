@@ -65,7 +65,6 @@ macro_rules! dispatch {
 
 fn main() {
     let terminate = Arc::new(AtomicBool::default());
-
     main::register_termination_signals_handling(&terminate);
 
     // Connect to Sway to find active window centers
@@ -87,12 +86,10 @@ fn main() {
 }
 
 mod main {
-    use std::sync::{Arc, atomic::AtomicBool};
-
-    pub fn register_termination_signals_handling(terminate: &Arc<AtomicBool>) {
+    pub fn register_termination_signals_handling(terminate: &super::Arc<super::AtomicBool>) {
         for sig in signal_hook::consts::TERM_SIGNALS {
 
-            let sig_handler = Arc::clone(terminate);
+            let sig_handler = super::Arc::clone(terminate);
             signal_hook::flag::register(*sig, sig_handler)
                 .expect("Cannot register signal handler");
         }
