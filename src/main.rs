@@ -4,7 +4,7 @@ use input::{
     event::{
         EventTrait as _,
         pointer::PointerEventTrait,
-        PointerEvent as __
+        PointerEvent as Pev
     },
     Libinput,
     LibinputInterface
@@ -204,7 +204,7 @@ fn handle_events(
         };
 
         match event {
-            __::Motion(_) | __::MotionAbsolute(_) => {
+            Pev::Motion(_) | Pev::MotionAbsolute(_) => {
 
                 let current_event_time = event.time();
                 let delta_time;
@@ -323,7 +323,7 @@ fn handle_events(
             },
 
             // Enter into slow mode on scroll events.
-            __::ScrollContinuous(_) | __::ScrollFinger(_) | __::ScrollWheel(_) => {
+            Pev::ScrollContinuous(_) | Pev::ScrollFinger(_) | Pev::ScrollWheel(_) => {
 
                 past_event_time = event.time();
 
