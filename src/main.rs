@@ -65,6 +65,7 @@ macro_rules! dispatch {
 
 fn main() {
     let terminate = Arc::new(AtomicBool::default());
+
     main::register_termination_signals_handling(&terminate);
 
     // Connect to Sway to find active window centers
@@ -513,7 +514,7 @@ mod cli {
         pub pointer_acceleration: f32,
 
         /// Pointer acceleration in fast mode for Sway
-        #[clap(long, default_value = "0.8")]
+        #[clap(long, default_value = "1.0")]
         pub javelin_acceleration: f32,
 
         /// Time of pointer rest before swithcing
@@ -523,7 +524,7 @@ mod cli {
 
         /// Time of pointer rest before swithcing
         /// from fast mode into slow mode
-        #[clap(long, default_value = "32")]
+        #[clap(long, default_value = "48")]
         pub javelin_cooldown: u32,
 
         /// Time between cursor animation "frames"
