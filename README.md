@@ -2,9 +2,9 @@
 
 [![Lines Of Code](https://tokei.rs/b1/github/I60R/javelin)](https://github.com/I60R/javelin)
 
-Touchpad on laptops with large screens has a problem: depending on cursor acceleration it's either too slow or imprecise. So, when it's too slow that reqires several swipes to move cursor from one screen corner to another, and when it's too fast that reqires several swipes because cursor is hard to aim. With that touchpad usage becomes quite distracting and annoying. Let also add that in order to execute a precise cursor movement user must remember where cursor stays otherwise another swipe is required to find it.
+Touchpad on laptops with large screens has a problem: depending on cursor acceleration it's either too slow or imprecise. So, when it's too slow that reqires several swipes to move cursor from one screen corner to another because finger moves ouside the edge of touchpad, and when it's too fast that reqires several swipes because cursor is hard to aim. With that touchpad usage becomes quite distracting and annoying. Let also add that in order to execute a precise cursor movement user must remember where cursor stays otherwise another swipe is required to find it.
 
-I propose a solution which allows user to precisely aim cursor at the target with only two *short* swipes or with only one in the best case. The first swipe moves cursor fast to "throw" it in an appropriate direction while the second moves it slowly to precisely complete the movement. Also, user don't need to remember where the cursor position is because after a short timeout it moves to the center of active window, so the starting position of movement remains very predictable.
+I propose a solution which allows user to precisely aim cursor at the target with only two *short* swipes or even with just one in the best case. The first swipe moves cursor fast to "throw" it in an appropriate direction while the second moves it slowly to precisely complete the movement. Also, user don't need to remember where the cursor position stays because after a short timeout it moves to the center of active window, so the starting position of movement remains very predictable.
 
 ![example](example.svg)
 
