@@ -2,6 +2,7 @@
 name = "javelin"
 version = "0.1.0"
 edition = "2021"
+build = "build_shell_completions.rs"
 
 [dependencies]
 clap = { version = "4.0.23", features = ["derive"] }
@@ -10,3 +11,7 @@ libc = "0.2.119"
 signal-hook = "0.3.14"
 spin_sleep = "1.1.1"
 swayipc = "3.0.0"
+
+[build-dependencies]
+clap = { version = "4.0.29", features = ["derive", "env"] }
+clap_complete = "4.0.6"
