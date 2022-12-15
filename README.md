@@ -34,4 +34,6 @@ Javelin depends on the following libraries:
 
 ## Installation
 
-Currently the only way to install javelin is to clone this repository and run `cargo install --path .` or if you have Arch Linux then run `makepkg -ef` and install created package by `pacman`.
+- Arch Linux
+
+    [javelin-git](https://aur.archlinux.org/packages/javelin-git) package is available in AUR. Install with `paru -S javelin-git`
