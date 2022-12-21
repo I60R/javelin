@@ -119,6 +119,7 @@ fn handle_events(
             pointer_cooldown,
             javelin_cooldown,
             reload_msec,
+            do_not_hide_cursor,
             tremble_msec,
             x_split_reload,
             y_split_reload,
@@ -127,11 +128,17 @@ fn handle_events(
         ..
     } = args;
 
+    let hide_cursor_cmd = if do_not_hide_cursor {
+        String::new()
+    } else {
+        format!("seat * hide_cursor {reload_msec}")
+    };
+
     // Javelin sets some Sway settings for better experience
     conn.run_command(format!("
         focus_follows_mouse always
         mouse_warping container
-        seat * hide_cursor {reload_msec}
+        {hide_cursor_cmd}
         input type:{device_type} pointer_accel {javelin_acceleration}
     "))?;
 

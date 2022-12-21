@@ -143,6 +143,10 @@ pub struct Args {
     #[clap(long, default_value = "48")]
     pub javelin_cooldown: u32,
 
+    /// Don't hide cursor on javelin reload
+    #[clap(long)]
+    pub do_not_hide_cursor: bool,
+
     /// Time between cursor animation "frames"
     #[clap(long, default_value = "32")]
     pub tremble_msec: u32,
